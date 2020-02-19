@@ -1,0 +1,203 @@
+---
+title: "Assignment2_Chen Liu"
+author: "Chen Liu"
+date: "January 24, 2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+1. Loading packages and data
+```{r,echo = T, results = 'hide',message = FALSE,warning = FALSE}
+library(quantmod)
+datapath<-"/Users/me/Desktop/MSCA/FinancialAnalytics/week2"
+SP500.Industrials.Health<-read.csv(file=paste(datapath,"Industrials_Health_Names.csv",sep="/"),header=F)
+
+# because CVS acquired Aetna, I get 'CVS' instead of 'AET
+levels(SP500.Industrials.Health[,1])[2]<-'CVS'
+SP500.Industrials.Health.names<-as.character(SP500.Industrials.Health[,1])
+suppressWarnings(getSymbols(SP500.Industrials.Health.names,from="2014-7-1",to="2015-7-1"))
+suppressWarnings(getSymbols("XLV",from="2014-7-1",to="2015-7-1"))
+suppressWarnings(getSymbols("XLI",from="2014-7-1",to="2015-7-1"))
+suppressWarnings(getSymbols("SPY",from="2014-7-1",to="2015-7-1"))
+
+# Pull Fed Funds data as the risk free rate
+FedFunds.BD<-read.csv(file=paste(datapath,"RIFSPFF_NB.csv",sep="/"))
+FedFunds.BD$Time.Period<- as.Date(FedFunds.BD[,1],"%m/%d/%Y")
+# Extract FedFunds data for 7/1/14 to 7/1/15
+FedFunds<- subset(FedFunds.BD, Time.Period >= "2014-7-1" & Time.Period <= "2015-7-1")
+```
+
+2.Create Efficient Frontier model
+```{r,,echo = T,message = FALSE,warning = FALSE}
+
+Mean.Sd.SP500.companies<-cbind(sd=sapply(SP500.Industrials.Health.names,function(z) sd(diff(log(get(z)[,6])),na.rm=TRUE)),
+                              mean=sapply(SP500.Industrials.Health.names,function(z)mean(diff(log(get(z)[,6])),na.rm=TRUE)))
+head(Mean.Sd.SP500.companies)
+Mean.Sd.SPY<-c(sd(diff(log(SPY[,6])),na.rm=TRUE),mean(diff(log(SPY[,6])),na.rm=TRUE))
+Mean.FedFunds<-mean(FedFunds[,2])/100/360
+
+plot(Mean.Sd.SP500.companies,ylab="Mean",xlab="Sd",pch=19,xlim=c(0,.03))
+points(Mean.Sd.SPY[1],Mean.Sd.SPY[2],col="red",pch=19)
+points(0,Mean.FedFunds,col="green",pch=19)
+lines(c(0,Mean.Sd.SPY[1]),c(mean(FedFunds[,2])/100/360,Mean.Sd.SPY[2]))
+text(Mean.Sd.SP500.companies,labels=rownames(Mean.Sd.SP500.companies),cex=.5,pos=2)
+text(Mean.Sd.SPY[1],Mean.Sd.SPY[2],labels="SPY",cex=.5,col="red",pos=2)
+```
+
+3. Build the CAPM model
+```{r}
+#Calculate betas of all the companies on the list to SPY.
+SP500.companies<-cbind(CAT$CAT.Adjusted,FDX$FDX.Adjusted,
+                       GE$GE.Adjusted,HON$HON.Adjusted,
+                       LMT$LMT.Adjusted,NOC$NOC.Adjusted,
+                       UNP$UNP.Adjusted,UPS$UPS.Adjusted,
+                       UTX$UTX.Adjusted,WM$WM.Adjusted,
+                       ABT$ABT.Adjusted,CVS$CVS.Adjusted,
+                       HUM$HUM.Adjusted,JNJ$JNJ.Adjusted,
+                       MDT$MDT.Adjusted,PFE$PFE.Adjusted,
+                       SPY$SPY.Adjusted)
+
+colnames(SP500.companies)<-c("CAT","FDX","GE","HON","LMT","NOC","UNP","UPS","UTX","WM",
+                                   "ABT","CVS","HUM","JNJ","MDT","PFE","SPY")
+
+FedFunds.BD.2014.daily<-FedFunds[-1,2]/100/360
+SP500.companies_Excess<-apply(SP500.companies,2,function(z) diff(log(z))-FedFunds.BD.2014.daily)
+SP500.companies.betas<-as.matrix(apply(SP500.companies_Excess[,-17],2,function(z) 
+  lm(z~-1+SP500.companies_Excess[,'SPY'])$coefficients))
+rownames(SP500.companies.betas)<-rownames(Mean.Sd.SP500.companies) # without SPY
+head(SP500.companies.betas)
+
+plot(SP500.companies.betas,
+     Mean.Sd.SP500.companies[,2],
+     ylab="SP500.companies.returns",pch=19,xlim=c(0,2))
+points(1,Mean.Sd.SPY[2],col="red",pch=19)
+points(0,Mean.FedFunds,col="green",pch=19)
+lines(c(0,1),
+      c(Mean.FedFunds,Mean.Sd.SPY[2]))
+text(SP500.companies.betas,Mean.Sd.SP500.companies[,2],labels=rownames(Mean.Sd.SP500.companies),cex=.5,pos=2)
+text(1,Mean.Sd.SPY[2],labels="SPY",cex=.5,col="red",pos=2)
+```
+
+4.Arbitrage Pricing Theory
+```{r}
+# Calculate the daily returns in the portfolio
+Stock.Portfolio.Returns <- as.data.frame(matrix(NA,nrow=251, ncol=length(SP500.Industrials.Health.names)))
+colnames(Stock.Portfolio.Returns) <- SP500.Industrials.Health.names
+for (i in SP500.Industrials.Health.names){
+  Stock.Portfolio.Returns[,i] <- diff(log((get(i)[,6])))[-1,]
+}
+SPY.returns<-as.matrix(diff(log(SPY$SPY.Adjusted))[-1])
+XLV.returns<-as.matrix(diff(log(XLV$XLV.Adjusted))[-1])
+XLI.returns<-as.matrix(diff(log(XLI$XLI.Adjusted))[-1])
+```
+
+4.1 Step 1: selection of factors
+```{r}
+Stock.Portfolio.Returns.PCA<-princomp(Stock.Portfolio.Returns)
+cumsum(Stock.Portfolio.Returns.PCA$sdev/sum(Stock.Portfolio.Returns.PCA$sdev))
+
+Stock.Portfolio.Returns.PCA.factors<-as.matrix(Stock.Portfolio.Returns.PCA$scores[,1:2])
+Stock.Portfolio.Returns.PCA.loadings<-Stock.Portfolio.Returns.PCA$loadings[,1:2]
+Stock.Portfolio.Returns.PCA.zero.loading<-Stock.Portfolio.Returns.PCA$center
+```
+I will use only 2 factors which totally account for about 33% of variability, interpreting the rest as idiosyncratic diversifiable risk.
+
+```{r}
+matplot(1:16,Stock.Portfolio.Returns.PCA.loadings,type="l",lty=1)
+abline(h=0)
+abline(v=10.5)
+legend('bottomleft', legend=c("Comp1", "Comp2"),lty=1,col=1:2)
+```
+
+The first loading shows that all stocks of the portfolio are positively correlated with the first factor.
+
+```{r}
+plot(SPY.returns,Stock.Portfolio.Returns.PCA.factors[,1],
+     main="Correlation First Factor vs. SPY return",type="l")
+
+```
+The correlation between the first factor and SPY returns is very high.
+
+The second loading has opposite signs for the stocks from industrial sector and health secotr..
+This may mean that the second factor may be interpreted as the spread between XLI and XLV.
+```{r}
+plot(XLI.returns-XLV.returns,Stock.Portfolio.Returns.PCA.factors[,2]
+     ,main="Correlation Second Factor vs. XLI XLV Spread",type="l")
+```
+This relationship is not as strong as interpretation of the first factor.
+
+Fit linear models explaining the interpretation of both factors.
+```{r}
+lm.fit.factor1<-lm(Stock.Portfolio.Returns.PCA.factors[,1]~SPY.returns)
+lm.fit.factor2<-lm(Stock.Portfolio.Returns.PCA.factors[,2]~I(XLI.returns-XLV.returns))
+summary(lm.fit.factor1)
+summary(lm.fit.factor2)
+```
+
+Here we can see that for both models the slopes are significant, but the intercepts are not.
+The first model has a high R squared, while the second model does not.
+The resulting models are: Rf1=3.94Rspy
+                          Rf2=1.01(RXLI-RXLV)
+
+Check the residuals of both fits.
+For factor 1 fit:
+```{r}
+hist(lm.fit.factor1$residuals)
+qqnorm(lm.fit.factor1$residuals)
+qqline(lm.fit.factor1$residuals)
+```
+For factor 2 fit:
+```{r}
+hist(lm.fit.factor2$residuals)
+qqnorm(lm.fit.factor2$residuals)
+qqline(lm.fit.factor2$residuals)
+```
+
+4.2 Step 2: estimation of betas
+```{r}
+Stock.portfolio.betas<-apply(Stock.Portfolio.Returns,2,
+                             function(z) lm(z~Stock.Portfolio.Returns.PCA.factors[,1]+
+                                              Stock.Portfolio.Returns.PCA.factors[,2])$coefficients)
+rownames(Stock.portfolio.betas)<-c("Alpha","Factor.1","Factor.2")
+Stock.portfolio.betas<-as.data.frame(t(Stock.portfolio.betas))
+cbind(zeroLoading=Stock.Portfolio.Returns.PCA.zero.loading,Stock.Portfolio.Returns.PCA.loadings)
+```
+
+4.3 Step 3: estimation of market price of risk
+```{r}
+Market.Prices.of.risk.fit<-lm(I(Alpha-Mean.FedFunds)~.-1,data=Stock.portfolio.betas)
+summary(Market.Prices.of.risk.fit)
+```
+This is the estimation of market price of risk,both R^2 and R^2 adjusted are not too bad. Both soth parameter are significant.
+
+APT process
+```{r}
+Market.Prices.of.risk<-c(Mean.FedFunds,Market.Prices.of.risk.fit$coefficients)
+Market.Prices.of.risk
+Market.Prices.of.risk.fit$residuals
+plot(Market.Prices.of.risk.fit$residuals,main="APT, Residual Value",type="h",xaxt="n",xlab="Stock")
+abline(h=0)
+axis(1, at=1:16, labels=SP500.Industrials.Health.names,cex.axis=0.6)
+```
+
+From the residual plot, we can see that CAT's residuals are very negative. This suggests that the actual stock return has been lower than the expected return of the model during the training period. This stock is overvalued. Alternatively, NOC and CVS have high positive residuals. This suggests that these two stocks' actual returns have out performed the expected return of the model during the training period. These two stocks are undervalued.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
