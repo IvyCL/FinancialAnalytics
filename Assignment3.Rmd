@@ -5,6 +5,7 @@ date: "1/26/2020"
 output: pdf_document
 ---
 
+This assignment helps understanding linear models for time series
 ```{r setup,warning=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tseries)
