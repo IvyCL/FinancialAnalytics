@@ -1,0 +1,292 @@
+---
+title: "Homework5"
+author: "Chen Liu"
+date: "2/14/2020"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This assignment helps understanding stationarity and seasonality of linear models for time series
+
+Analysis of Moody’s Bond Yields
+
+```{r, warning=FALSE, include=FALSE }
+# Load dependencies
+library(forecast)
+library(urca)
+library(tseries)
+library(TSA)
+```
+
+Read in data
+```{r}
+datapath<-"/Users/me/Desktop/MSCA/FinancialAnalytics/week5"
+dat<-read.csv(file=paste(datapath,"Lecture 5_MYieldsData.csv",sep="/"))
+head(dat)
+dim(dat)
+```
+
+```{r}
+aaa<-dat[,2]
+baa<-dat[,3]
+plot(aaa, col="black", type="l", main="AAA and BAA Constant Maturity Rates")
+lines(baa, col="red")
+```
+# Regression models with autocorrelated errors
+
+Make the scatter plot of aaa and baa to observe the level of correlation between the variables.
+```{r}
+plot(aaa, baa, xlab="AAA Yields", ylab="BAA Yields", main="Scatter plot of AAA vs BAA Yields")
+```
+
+It looks like that these time series are correlated, but when the rates are low, it seems like there is more deviation from the correlation.
+
+Describe the relationship between the two series by a simple regression model
+```{r}
+linreg <-lm(baa~aaa)
+summary(linreg)
+```
+Check the quality of residuals
+```{r}
+residuals <- linreg$residuals
+plot(residuals,type="l",col ="blue")
+hist(residuals)
+acf(residuals,col ="blue",lty=1 ,lwd = 4)
+Box.test.residuals<-Box.test(residuals,lag=12,type='Ljung')
+Box.test.residuals
+```
+
+The plot and histogram of the residuals from linear regression model do not look like gaussian distribution.The ACF of residuals is highly significant and decays slowly, showing that the process of the residuals has long memory and is not stationary. It is confirmed by Ljung-box test. There is a pattern of a unit-root nonstationary time series, in other words two interest rates are not cointegrated.
+
+This behavior of residuals leads to the consideration of differencing the series of interest rates.
+```{r}
+daaa<-diff(aaa)
+dbaa<-diff(baa)
+plot(daaa,dbaa,main="Scatter plot of Differences", col = "blue")
+```
+
+The figure shows that the differenced series remain highly correlated.
+
+Fit linear regression to the differenced time series.
+```{r}
+clinreg <-lm(dbaa~daaa-1)
+summary(clinreg)
+```
+Test the residuals of clinreg.
+```{r}
+cresiduals <- clinreg$residuals
+plot(cresiduals,type ="l",col = "blue")
+acf(cresiduals,main = "ACF of residuals",col ="blue",lty=1 ,lwd = 4)
+Box.test.cresiduals<-Box.test(cresiduals,lag=10,type='Ljung')
+Box.test.cresiduals
+```
+
+The residuals from the fit to the differenced time series look close to stationary now.
+However, Box-Ljung test shows that serial correlation is still present.
+
+From the ACF of residuals, we can identify an MA(1) model for the residuals and modify the linear regression model to
+dbaa=β2daaa+ϵt
+ϵt=at−θ1at−1,t=2,…,T,
+where at assumed to be a white noise series.
+
+Estimate MA(1) model and explore the residuals.
+```{r}
+ma1<-arima(cresiduals,order=c(0,0,1))
+ma1_res<-residuals(ma1)
+tsdiag(ma1,gof=12)
+```
+
+```{r}
+theta1 <-ma1$coef[1]
+a_t <- theta1 *ma1_res
+x_1<-baa[-length(baa)]
+forec <- x_1 + clinreg$coefficients*daaa+a_t
+matplot(cbind(baa[-1],forec),type = "l",col = c("blue","orange"),lwd=c(2,1),main= "BAA Yield and forecast",ylab="Yield and Forecast")
+legend("topright", c("BAA rates","Forecasts"), lwd=2,col = c("blue","red"), bty="n")
+
+```
+
+Check a scatter plot of BAA forecast differences vs AAA differences
+```{r}
+daaa.2 <- daaa[-1]
+difforec <- diff(forec) 
+cr <- cbind(difforec, daaa.2)
+plot(cr[,1],cr[,2], col = "black",main = "Differences of Forecasted BAA vs Differences of AAA Yields",
+      xlab="Difference of Forecasts of BAA Rate",ylab="Differences of AAA Rate")
+```
+Figure shows that regression model with ARIMA residuals preserved the “short term” dependence of yields increments.
+
+# Cointegration
+### Fit cointegration model
+```{r}
+data <- cbind(aaa,baa)
+cajo <- ca.jo(data, ecdet = "none", type="eigen", K=2, spec="longrun")
+summary(cajo)
+```
+
+### Residuals and their ACF and PACF 
+```{r}
+plotres(cajo)
+```
+
+### Check statistics and critical values of the test for cointegration order
+```{r}
+cajo@teststat
+cajo@cval
+barplot(cajo@cval[1,],main = "Johansen test h<=1",col = "red")
+abline(h=cajo@teststat[1], col="blue")
+legend("topleft", c("critical values","test statistics"), lwd=2,col = c("red","blue"), bty="n")
+```
+Here we cannot reject the null hypothesis that the cointegration order is less than or equal to one.
+```{r}
+barplot(cajo@cval[2,],main = "Johansen test h=0",col = "red")
+abline(h=cajo@teststat[2], col="blue")
+legend("topleft", c("critical values","test statistics"), lwd=2,col = c("red","blue"), bty="n")
+```
+Here we can reject the null hypothesis that the cointegration order = 0.
+### Conclusion: the cointegrating order equals 1.
+
+```{r}
+a_1<- cajo@V[,1]
+z_t1= data %*% a_1
+matplot(z_t1,type ="l", main = "z(1,t)=a1'x(t)", col = "blue")
+```
+Estimate autoregression model for process zt1
+```{r}
+zar <-ar(z_t1,  aic = TRUE,method = "yule-walker")
+zar$order
+```
+Check the roots of characteristic equation.
+```{r}
+par(mfrow = c(1, 1), cex = 0.9)
+library(plotrix)
+
+polyPar<-c(1,-zar$ar)
+r6<-polyroot(polyPar)
+Mod(r6)
+r6Re<-Re(r6)
+r6Im<-Im(r6)
+plot(r6Re,r6Im,xlim=c(min(r6Re),max(r6Re)),asp=1,ylim=c(min(r6Im),max(r6Im)))
+draw.circle(0,0,radius=1)
+
+```
+check cointegration vector 2
+```{r}
+a_2<- cajo@V[,2]
+z_t2= data %*% a_2
+matplot(z_t2,type ="l", main = "z(2,t)=a2'x(t)", col = "blue")
+```
+
+### Predicting using cointegration model
+Using the following matrix multiplication equation:
+deltaXt = GAMMA * deltaXt1 + PI * Xt2 + mu + et
+```{r}
+mu <-cajo@GAMMA[,1]
+PI<-cajo@PI
+Gamma<-cajo@GAMMA[,2:3]
+dX_1 <- cajo@Z0
+X_2 <- cajo@ZK
+```
+
+```{r}
+deltaX_t_1 <- Gamma %*% t(dX_1) + PI %*%t(X_2) 
+deltaX_t_1<-apply(deltaX_t_1,2,"+",mu)
+nrowsdata <- dim(data)[1]
+data_t_2 = data[3:nrowsdata,]
+deltaX_t_1 <- t(deltaX_t_1)
+forecX <- data_t_2+deltaX_t_1
+```
+
+#### Plot the predictions of the AAA yield
+```{r}
+fraaa = cbind(aaa[3:length(aaa)],forecX[,1])
+matplot(fraaa,col =c("black","red"),type="l",main = "AAA Yield and prediction")
+legend("topright", c("AAA yield","prediction"), lwd=2,col = c("black","red"), bty="n")
+
+```
+
+#### Plot the predictions of the BAA yield
+```{r}
+frbaa = cbind(baa[3:length(baa)],forecX[,2])
+matplot(frbaa,col =c("black","red"),type="l",main = "BAA yields and prediction")
+legend("topright", c("BAA yield","prediction"), lwd=2,col = c("black","red"), bty="n")
+```
+Figures show that cointegration model preserved long term dependence of aaa and baa yields.
+
+#### Difference the forecasts and plot them.
+```{r}
+dfaaa <- diff(fraaa)
+dfbaa <- diff(frbaa)
+
+plot(dfaaa,dfbaa,col ="black",main = "Scatter plot for change of prediction for AAA and BAA yields",
+     xlab="Differenced Forecasts of AAA Yields",ylab="Differenced Forecasts of BAA Yields")
+```
+Figure shows that cointegration model also captured short term dependence of rates differences.
+
+#### Check errors of prediction by the cointegration model.
+```{r}
+cerrorA<-aaa[3:length(aaa)]-forecX[,1]
+cerrorB<-baa[3:length(baa)]-forecX[,2]
+#Plot both errors
+matplot(cerrorA,main = " Error of Prediction of AAA Yield",type = "l")
+matplot(cerrorB,main = " Error of Prediction of BAA Yield",type = "l")
+# Scatterplot of errors of predicaiton for both bond levels
+plot(cerrorA,cerrorB,col ="black",main = "Scatter plot for errors of prediction for AAA and BAA yields")
+# Covariance matirx of residuals of the cointegration model
+cor(cbind(cerrorA, cerrorB))
+```
+
+### Model Comparison
+
+Compare the errors of the regression model with the cointegration model
+```{r}
+linreg.errors <- baa[-1] - forec
+errors <- cbind(linreg.errors[-1], cerrorB)
+#plot two models' errors
+matplot(errors,type ="l",col = c("orange","blue"),main = "BAA Yield Errors for Regression and Cointegration Model")
+legend("topright", c("regression errors","cointegration errors"), lwd=2,col = c("orange","blue"), bty="n")
+```
+The variance level of cointegration errors is lower than for errors of the regression model.
+
+Check how errors of the two models are related to each other.
+```{r}
+plot(errors[,1],errors[,2],col = "black", 
+     main = "Scatter Plot of Regression model Errors vs Cointegration errors",
+     xlab="Regression Model Errors", ylab="Cointegration Model Errors")
+```
+
+There is not an obvious correlation between the errors of the two models. When the coitegration model errors decrease, regression model errors do not change a lot.
+
+Linear regression model alone is not a valid model for this data. However, linear regression with ARMA errors as well as Cointegration, are both valid models for predicting the data. Furthermore, the Cointegration model did a better job of forecasting when comparing the variance of the errors of both valid models.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
