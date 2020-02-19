@@ -1,0 +1,162 @@
+---
+title: "Assignment3_ChenLiu"
+author: "Chen Liu"
+date: "1/26/2020"
+output: pdf_document
+---
+
+```{r setup,warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tseries)
+library(forecast)
+library(TSA)
+```
+
+1. Exercise 2 on page 125
+Use the file m-dec125910-6111.txt from the website of the Author
+
+
+```{r}
+datapath<-"/Users/me/Desktop/MSCA/FinancialAnalytics/week3"
+da<-read.table(paste(datapath,"m-dec125910-6111.txt",sep="/"),header=T)
+head(da)
+dim(da)
+```
+
+1.1 For CRSP portfolios of Decile 2, 10 returns test null hypothesis that the first 12 lags of autocorrelations equal zero with 5% level
+
+```{r,Decile2,warning=FALSE}
+dc2<-da$dec2
+dc2.ts<-ts(dc2,frequency=12,start=c(1961,1))
+lndc2<-log(dc2+1)
+lndc2.ts<-ts(lndc2,frequency=12)
+par(mfcol=c(1,1))
+plot(dc2.ts,xlab='year',ylab='returns')
+title(main='Simple returns')
+acf(dc2,lag=24)
+#plot log returns
+plot(lndc2.ts,xlab='year',ylab='returns')
+title(main='log returns')
+acf(lndc2,lag=24)
+```
+
+Test the null hypothesis that the first 12 lags of autocorrelations of decile2 equal zero with 5% level.
+```{r}
+Box.test(dc2,lag=12,type='Ljung')
+Box.test(lndc2,lag=12,type='Ljung')
+```
+We see that Box-Ljung test cannot reject H0 of no correlations first 12 lags of decile2 returns with 5% level.
+
+```{r,Decile 10}
+dc10<-da$dec10
+dc10.ts<-ts(dc10,frequency=12,start=c(1961,1))
+lndc10<-log(dc10+1)
+lndc10.ts<-ts(lndc10,frequency=12)
+par(mfcol=c(1,1))
+plot(dc10.ts,xlab='year',ylab='returns')
+title(main='Simple returns')
+acf(dc10,lag=24)
+#plot log returns
+plot(lndc10.ts,xlab='year',ylab='returns')
+title(main='log returns')
+acf(lndc10,lag=24)
+Box.test(dc10,lag=12,type='Ljung')
+Box.test(lndc10,lag=12,type='Ljung')
+```
+We see that Box-Ljung test results return both p-values that are significant at the 5% level. Therefore, we can reject the null hypothesis and say that there exists serial correlations in the monthly simple returns of the Decile 10 data.
+
+1.2 Fit ARMA model for returns of Decile 2, perform model checking and write down the fitted model
+```{r}
+acf(dc2)
+pacf(dc2)
+eacf(dc2)
+auto.arima(dc2)
+arma1<-arima(dc2,order=c(0,0,1))
+arma11<-arima(dc2,order=c(1,0,1))
+arma11
+arma1
+```
+
+```{r}
+Box.test(arma1$residuals,lag=12,type='Ljung')
+Box.test(arma11$residuals,lag=12,type='Ljung')
+1-pchisq(9.4993,11)
+1-pchisq(7.8567,10)
+tsdiag(arma11)
+tsdiag(arma1)
+```
+I choose ARMA(0,1) model, which has lower AIC. And the test shows that the residual is not autocorrelated.
+
+
+1.3 Use the fitted model to produce 1- to 12-step ahead forecasts of the series and the associated standard errors of forecasts.
+```{r}
+prd <- predict(arma1,12)
+cbind(Predicted=as.vector(prd$pred),Standard.Error=as.vector(prd$se))
+```
+
+
+2.Consider logs of monthly yields of Moody’s AAA bonds. Fit a time series model, do the model checking.
+```{r}
+Moody<-read.table(paste(datapath,"m-aaa-1911.txt",sep="/"),header=T)
+dim(Moody)
+lny<-diff(log(Moody$yield))
+plot(lny,xlab='year',ylab='yield')
+title(main='Monthly yield')
+#Test stationary
+adf.test(lny)
+```
+The data set passed the stationary test.
+```{r}
+acf(lny, lag =30)
+pacf(lny, lag =30)
+```
+
+The time series of monthly yield is not stationary.
+```{r}
+eacf(lny)
+auto.arima(lny)
+```
+Based on the eacf and auto.arima, I have several candidates:ARIMA(2,0,3), ARIMA(0,0,3), ARIMA(3,0,2)
+```{r}
+model1<-arima(lny,order=c(2,0,3))
+model2<-arima(lny,order=c(0,0,3))
+model3<-arima(lny,order=c(3,0,2))
+
+AIC1<-model1$aic
+AIC2<-model2$aic
+AIC3<-model3$aic
+
+df <- data.frame(models = c("ARMA(2,3)","MA(3)","ARMA(3,2)"),AIC=c(AIC1,AIC2,AIC3))
+knitr::kable(df, caption = "AICs of the Three Candidate Models")
+```
+Based on the AIC value, we choose model MA(3).
+
+Model checking
+```{r}
+Box.test(model2$residuals,lag=12,type='Ljung')
+1-pchisq(6.9494,9)
+tsdiag(model2)
+```
+
+Because the p-value is larger than 5%, we cannot reject the null hopytheis, the residual is not autocorrelated. Therefore, our model works.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
