@@ -1,0 +1,142 @@
+---
+title: "Week4_Assignment"
+author: "Chen Liu"
+date: "2/8/2020"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This assignment helps understanding stationarity and seasonality of linear models for time series
+
+Exercise 7 on page 126 of the Textbook
+
+```{r,warning=FALSE,include=FALSE}
+library(tseries)
+library(forecast)
+library(TSA)
+```
+
+Load in the data
+```{r}
+datapath<-"/Users/me/Desktop/MSCA/FinancialAnalytics/week4"
+da<-read.table(file=paste(datapath,"q-jnj-earns-9211.txt",sep="/"),header=T)
+head(da)
+dim(da)
+plot(da$earns)
+```
+almost linear growth in earns, so take log transformation
+```{r}
+earns<-log(da$earns)
+plot(earns,type = 'l',main='Log transformation of earnings')
+```
+
+Still not stationary, take the difference of the log earnings.
+```{r}
+diff.earns<-diff(earns)
+plot(diff.earns,type = 'l')
+acf(diff.earns)
+```
+
+It now looks more stationary, and shows seasonality.
+```{r}
+#consider seasonality
+s.diff<-diff(earns,4)
+#consider both seasonality and regular difference
+d.s<-diff(s.diff)
+par(mfrow=c(2,2))
+acf(earns)
+acf(diff.earns)
+acf(s.diff)
+acf(d.s)
+
+```
+
+The ACF of the log of earnings shows long memory, which is not stationary. Taking the difference of the log earnigs shows seasonality.
+Taking regular and seasonal difference shows exponential decay.
+
+Make the time series plots after differencing.
+```{r}
+# Obtain time plots
+par(mfcol=c(3,1))
+plot(diff.earns,xlab='year',ylab='diff',type='l')
+points(diff.earns,pch='c1',cex=0.7)
+plot(s.diff,xlab='year',ylab='sea-diff',type='l')
+points(s.diff,pch='c2',cex=0.7)
+plot(d.s,xlab='year',ylab='dd',type='l')
+points(d.s,pch='c1',cex=0.7) 
+
+# adf test
+adf.test(diff.earns)
+adf.test(s.diff)
+adf.test(d.s)
+```
+Regular differencing (top) removed growth and stressed seasonality. The ACF of that is high for lags which are multiles of 4. ACF decays slowly. Looks like seasonality at 4.
+Only seasonal differencing (middle) removed seasonality, but did not get stationarity.
+
+Both differences (bottom) removed both seasonality and nonstationarity.
+
+Estimate the model ARIMA(0,1,1) 
+```{r}
+m1=arima(earns,order=c(0,1,1),seasonal=list(order=c(0,1,1),period=4))
+m1
+```
+
+```{r}
+tsdiag(m1,gof=20) 
+```
+```{r}
+Box.test(m1$residuals,lag=12,type='Ljung')
+```
+```{r}
+pp1=1-pchisq(6.204,10)
+pp1
+```
+The test of residuals shows the model fits well. 
+
+My model is : (1-0.3223B)(1-0.2175B4)ϵt,σϵ2= 0.0011
+
+Refit the model using data from 1992 to 2008
+```{r}
+da2<-earns[1:68]
+m1<-arima(da2,order=c(0,1,1),seasonal=list(order=c(0,1,1),period=4))
+m1
+
+```
+My refitted model is : (1-0.3419B)(1-0.1849B4)ϵt,σϵ2= 0.001002
+
+Perform 1 to 10 step forecasts of earnings and obtain a forecast plot.
+```{r}
+par(mfrow=c(1,1))
+pm1<-predict(m1,10)
+pred<-pm1$pred
+se<-pm1$se
+ko<-da$earns # actual observations
+fore<-exp(pred+se^2/2) #point forecasts, delogged
+v1<-exp(2*pred+se^2)*(exp(se^2)-1)
+s1<-sqrt(v1) # std of the forecast error
+eps<-ko[60:78]
+length(eps)
+tdx<-(c(1:19)+3)/4+2006
+upp<-c(ko[68],fore+2*s1) # upper band (+2*std)
+low<-c(ko[68],fore-2*s1) # lower band (-2*std)
+plot(tdx,eps,xlab='year',ylab='earnings',type='l',ylim=c(min(low,eps)-0.3,max(upp,eps)+0.3))
+points(tdx[10:19],fore,pch='*')
+lines(tdx[9:19],upp,lty=2)
+lines(tdx[9:19],low,lty=2)
+points(tdx[10:19],ko[69:78],pch='o',cex=0.7)
+```
+Dashed lines - confidence bounds.
+Circles - actual earnings.
+Asterisks - predicted values.
+
+
+
+
+
+
+
