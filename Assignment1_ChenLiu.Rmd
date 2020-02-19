@@ -1,0 +1,79 @@
+---
+title: "Assignment1_ChenLiu"
+author: "Chen Liu"
+date: "January 23, 2020"
+output:
+  word_document: default
+  pdf_document: default
+documentclass: ctexart
+---
+
+```{r setup, echo = T, results = 'hide',message = FALSE,warning = FALSE}
+library(zoo)
+library(quantmod)
+library(timeDate)
+
+```
+
+2. Download and analyze excess return of S&P 500
+```{r s&p500, echo = T, results = 'hide',message = FALSE,warning = FALSE}
+getSymbols("^GSPC", from="2014-01-01",to="2014-12-31")
+GSPC$daily.return<-diff(GSPC$GSPC.Close)[-1]/as.numeric(GSPC$GSPC.Close[-length(GSPC$GSPC.Close)])
+GSPC$close.cont.eturns<-diff(log(GSPC$GSPC.Close))
+
+#get fed funds rate in 2014
+getSymbols(Symbols = 'DFF',  src = "FRED",adjust=TRUE)
+DFF_2014 <- DFF["2014"] 
+#calculate excess return
+DFF_2014$excess.return<-GSPC$close.cont.eturns-DFF_2014$DFF/360
+DFF_2014<-na.omit(DFF_2014) 
+head(DFF_2014,20)
+```
+
+
+3.Download and analyze exchange rates
+```{r,warning = FALSE}
+#3.1 Download GBP/USD,USD/JPY exchange rate
+getSymbols("GBP/USD",src="oanda",from = "2007-01-02")
+getSymbols("USD/JPY",src="oanda",from = "2007-01-02")
+```
+
+Note:Oanda website only provides data for the past 180 days
+
+```{r print}
+#3.2 Calculate daily log returns of both exchange rates
+GBPUSD$logReturn <- log(GBPUSD$GBP.USD[-1]/as.numeric(GBPUSD$GBP.USD[-length(GBPUSD$GBP.USD)]))
+USDJPY$logReturn <- log(USDJPY$USD.JPY[-1]/as.numeric(USDJPY$USD.JPY[-length(USDJPY$USD.JPY)]))
+head(GBPUSD,10)
+head(USDJPY,10)
+```
+
+
+```{r, echo = T,message = FALSE,warning = FALSE}
+#3.3 Calculate sample min, mean, sd, skewness, kurtosis, max of log returns for both exchange rates
+GBPUSDmin<-min(GBPUSD$logReturn)
+GBPUSDmax<-max(GBPUSD$logReturn)
+GBPUSDmean<-mean(GBPUSD$logReturn)
+GBPUSDsd<-sd(GBPUSD$logReturn)
+GBPUSDkurtosis<-kurtosis(GBPUSD$logReturn)
+GU <- data.frame(minimum=GBPUSDmin,maximum=GBPUSDmax,mean=GBPUSDmean,
+                 sd=GBPUSDsd,kurtosis=GBPUSDkurtosis)
+
+USDJPYmin<-min(USDJPY$logReturn)
+USDJPYmax<-max(USDJPY$logReturn)
+USDJPYmean<-mean(USDJPY$logReturn)
+USDJPYsd<-sd(USDJPY$logReturn)
+USDJPYkurtosis<-kurtosis(USDJPY$logReturn)
+UJ <- data.frame(minimum=USDJPYmin,maximum=USDJPYmax,mean=USDJPYmean,
+                 sd=USDJPYsd,kurtosis=USDJPYkurtosis)
+GU
+UJ
+```
+
+```{r 3.4, echo = T, message = FALSE,warning = FALSE}
+#Test hypothesis H0:μ=0 against alternative H0:μ≠0
+t.test(as.vector(GBPUSD$logReturn))
+t.test(as.vector(USDJPY$logReturn))
+```
+
+In both cases the p- values are not significant. So we cannot reject the null hypothesis in either case. We say that the means are not significantly different from zero.
