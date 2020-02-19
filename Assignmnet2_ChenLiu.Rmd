@@ -4,6 +4,7 @@ author: "Chen Liu"
 date: "January 24, 2020"
 output: word_document
 ---
+This assignment helps understanding of Markowitx efficient frontier, CAPM and APT models
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
